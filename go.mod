@@ -1,3 +1,3 @@
-module viewer-sdk
+module viewer-sdk-go
 
 go 1.27.3
