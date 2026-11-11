@@ -1,0 +1,122 @@
+{
+  "timeUnixNano": "1794394721207000001",
+  "observedTimeUnixNano": "1794394722000000000",
+  "severityNumber": 17,
+  "severityText": "ERROR",
+  "body": {
+    "stringValue": "payment failed: card declined"
+  },
+  "attributes": [
+    {
+      "key": "request_id",
+      "value": {
+        "stringValue": "req_A"
+      }
+    },
+    {
+      "key": "http.status_code",
+      "value": {
+        "intValue": "500"
+      }
+    },
+    {
+      "key": "big",
+      "value": {
+        "stringValue": "18446744073709551615"
+      }
+    },
+    {
+      "key": "ratio",
+      "value": {
+        "doubleValue": 0.25
+      }
+    },
+    {
+      "key": "nan",
+      "value": {
+        "stringValue": "NaN"
+      }
+    },
+    {
+      "key": "retry",
+      "value": {
+        "boolValue": false
+      }
+    },
+    {
+      "key": "took_ms",
+      "value": {
+        "intValue": "1500"
+      }
+    },
+    {
+      "key": "at",
+      "value": {
+        "stringValue": "2026-11-11T10:00:00Z"
+      }
+    },
+    {
+      "key": "err",
+      "value": {
+        "stringValue": "card declined"
+      }
+    },
+    {
+      "key": "raw",
+      "value": {
+        "bytesValue": "aGk="
+      }
+    },
+    {
+      "key": "tags",
+      "value": {
+        "arrayValue": {
+          "values": [
+            {
+              "stringValue": "a"
+            },
+            {
+              "intValue": "2"
+            },
+            {
+              "boolValue": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "meta",
+      "value": {
+        "kvlistValue": {
+          "values": [
+            {
+              "key": "a",
+              "value": {
+                "stringValue": "x"
+              }
+            },
+            {
+              "key": "z",
+              "value": {
+                "intValue": "1"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "http.route",
+      "value": {
+        "stringValue": "POST /invoices"
+      }
+    },
+    {
+      "key": "nothing",
+      "value": {}
+    }
+  ],
+  "traceId": "5b8efff798038103d269b633813fc60c",
+  "spanId": "eee19b7ec3c1b174"
+}
