@@ -1,10 +1,12 @@
 package viewer
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -21,14 +23,15 @@ type Logger struct {
 
 // core is what a Logger and all its children share.
 type core struct {
-	s       settings
-	console *console
-	now     func() time.Time
-	stats   counters
-}
-
-type counters struct {
-	logged atomic.Int64
+	s        settings
+	console  *console
+	now      func() time.Time
+	pipe     *pipeline // nil when records stay on the console
+	logged   atomic.Int64
+	after    atomic.Int64 // logged after Close
+	closed   atomic.Bool
+	once     sync.Once
+	closeErr error
 }
 
 // New makes a Logger. It never fails: a missing or broken setting falls back to the
@@ -42,7 +45,17 @@ func newLogger(cfg Config, getenv func(string) string, now func() time.Time) *Lo
 	for _, p := range s.problems {
 		fmt.Fprintf(stderr, "viewer: %s; logging to the console only\n", p)
 	}
-	return &Logger{c: &core{s: s, console: newConsole(s), now: now}}
+	c := &core{s: s, console: newConsole(s), now: now}
+	switch {
+	case s.sink != nil:
+		c.pipe = newPipeline(s, sinkExporter{s.sink}, now)
+	case s.remote():
+		c.pipe = newPipeline(s, newHTTPExporter(s, now), now)
+	}
+	if c.pipe != nil {
+		c.pipe.start()
+	}
+	return &Logger{c: c}
 }
 
 // With returns a logger that adds the given attributes to every record (spec SDK-02).
@@ -93,6 +106,70 @@ func (l *Logger) log(level Level, msg string, args []any) {
 }
 
 func (c *core) emit(r *Record) {
-	c.stats.logged.Add(1)
-	c.console.write(r, flatten(r.Attrs))
+	c.logged.Add(1)
+	fields := flatten(r.Attrs)
+	c.console.write(r, fields)
+	if c.pipe == nil {
+		return
+	}
+	if c.closed.Load() {
+		c.after.Add(1)
+		return
+	}
+	// The queued record holds resolved values, as they were at the call.
+	attrs := make([]slog.Attr, len(fields))
+	for i, f := range fields {
+		attrs[i] = slog.Attr{Key: f.Key, Value: f.Value}
+	}
+	r.Attrs = attrs
+	c.pipe.push(*r)
+}
+
+// Flush sends everything queued so far. Without a deadline on ctx it waits at most five
+// seconds (spec SDK-05).
+func (l *Logger) Flush(ctx context.Context) error {
+	if l.c.pipe == nil || l.c.closed.Load() {
+		return nil
+	}
+	ctx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+	return l.c.pipe.flush(ctx)
+}
+
+// Close sends what is queued and stops sending. Later log calls reach the console only.
+// Calling it again returns the first call's result.
+func (l *Logger) Close(ctx context.Context) error {
+	l.c.once.Do(func() {
+		l.c.closed.Store(true)
+		if l.c.pipe == nil {
+			return
+		}
+		ctx, cancel := withDefaultTimeout(ctx)
+		defer cancel()
+		l.c.closeErr = l.c.pipe.close(ctx)
+	})
+	return l.c.closeErr
+}
+
+// Stats reports what has happened to records so far.
+func (l *Logger) Stats() Stats {
+	st := Stats{Logged: l.c.logged.Load(), AfterClose: l.c.after.Load()}
+	if p := l.c.pipe; p != nil {
+		st.Queued = p.queued()
+		st.Sent = p.sent.Load()
+		st.QueueFull = p.full.Load()
+		st.Rejected = p.rejected.Load()
+		st.Failed = p.failed.Load()
+	}
+	return st
+}
+
+func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultFlush)
 }
