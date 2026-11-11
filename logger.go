@@ -19,6 +19,7 @@ var stderr io.Writer = os.Stderr
 type Logger struct {
 	c     *core
 	attrs []slog.Attr
+	sc    *scope // set on a request's logger (FromContext)
 }
 
 // core is what a Logger and all its children share.
@@ -67,7 +68,7 @@ func (l *Logger) With(args ...any) *Logger {
 	}
 	merged := make([]slog.Attr, 0, len(l.attrs)+len(attrs))
 	merged = append(append(merged, l.attrs...), attrs...)
-	return &Logger{c: l.c, attrs: merged}
+	return &Logger{c: l.c, attrs: merged, sc: l.sc}
 }
 
 // Enabled reports whether a record at level would be kept.
@@ -82,6 +83,37 @@ func (l *Logger) Info(msg string, args ...any)  { l.log(LevelInfo, msg, args) }
 func (l *Logger) Warn(msg string, args ...any)  { l.log(LevelWarn, msg, args) }
 func (l *Logger) Error(msg string, args ...any) { l.log(LevelError, msg, args) }
 
+// The Context variants add what ctx carries from a request: its request_id and trace ids.
+func (l *Logger) TraceContext(ctx context.Context, msg string, args ...any) {
+	l.logCtx(ctx, LevelTrace, msg, args)
+}
+func (l *Logger) DebugContext(ctx context.Context, msg string, args ...any) {
+	l.logCtx(ctx, LevelDebug, msg, args)
+}
+func (l *Logger) InfoContext(ctx context.Context, msg string, args ...any) {
+	l.logCtx(ctx, LevelInfo, msg, args)
+}
+func (l *Logger) WarnContext(ctx context.Context, msg string, args ...any) {
+	l.logCtx(ctx, LevelWarn, msg, args)
+}
+func (l *Logger) ErrorContext(ctx context.Context, msg string, args ...any) {
+	l.logCtx(ctx, LevelError, msg, args)
+}
+func (l *Logger) FatalContext(ctx context.Context, msg string, args ...any) {
+	l.logCtx(ctx, LevelFatal, msg, args)
+}
+
+func (l *Logger) logCtx(ctx context.Context, level Level, msg string, args []any) {
+	if level < l.c.s.level {
+		return
+	}
+	sc := scopeFrom(ctx)
+	if sc == nil {
+		sc = l.sc
+	}
+	l.logAttrs(level, l.c.now(), msg, argsToAttrs(args), sc)
+}
+
 // Fatal records msg at the fatal level. Unlike log.Fatal it does not exit: the program
 // decides what happens next, and should Close the logger before it ends.
 func (l *Logger) Fatal(msg string, args ...any) { l.log(LevelFatal, msg, args) }
@@ -90,7 +122,7 @@ func (l *Logger) log(level Level, msg string, args []any) {
 	if level < l.c.s.level {
 		return
 	}
-	l.logAttrs(level, l.c.now(), msg, argsToAttrs(args), nil)
+	l.logAttrs(level, l.c.now(), msg, argsToAttrs(args), l.sc)
 }
 
 // logAttrs is every log call's way in. A zero t means "unknown": the console leaves the
