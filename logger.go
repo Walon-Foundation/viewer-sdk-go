@@ -90,6 +90,15 @@ func (l *Logger) log(level Level, msg string, args []any) {
 	if level < l.c.s.level {
 		return
 	}
+	l.logAttrs(level, l.c.now(), msg, argsToAttrs(args), nil)
+}
+
+// logAttrs is every log call's way in. A zero t means "unknown": the console leaves the
+// time out and the record is sent with the time it was observed.
+func (l *Logger) logAttrs(level Level, t time.Time, msg string, call []slog.Attr, sc *scope) {
+	if level < l.c.s.level {
+		return
+	}
 	// Logging must never take the program down (spec SDK-04).
 	defer func() {
 		if r := recover(); r != nil {
@@ -97,17 +106,27 @@ func (l *Logger) log(level Level, msg string, args []any) {
 		}
 	}()
 	attrs := l.attrs
-	if call := argsToAttrs(args); len(call) > 0 {
-		attrs = make([]slog.Attr, 0, len(l.attrs)+len(call))
+	if sc != nil || len(call) > 0 {
+		n := len(l.attrs) + len(call)
+		if sc != nil {
+			n += len(sc.attrs)
+		}
+		attrs = make([]slog.Attr, 0, n)
+		if sc != nil {
+			attrs = append(attrs, sc.attrs...)
+		}
 		attrs = append(append(attrs, l.attrs...), call...)
 	}
-	r := Record{Time: l.c.now(), Level: level, Message: msg, Attrs: attrs}
+	r := Record{Time: t, Level: level, Message: msg, Attrs: attrs}
+	if sc != nil {
+		r.TraceID, r.SpanID = sc.traceID, sc.spanID
+	}
 	l.c.emit(&r)
 }
 
 func (c *core) emit(r *Record) {
 	c.logged.Add(1)
-	fields := flatten(r.Attrs)
+	fields := withException(flatten(r.Attrs), r.Level)
 	c.console.write(r, fields)
 	if c.pipe == nil {
 		return
