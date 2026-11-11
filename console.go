@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // console writes records to stdout (spec D-07, SDK-06): readable text in development,
@@ -142,9 +143,60 @@ func quoteIfNeeded(s string) string {
 	return s
 }
 
+const hexDigits = "0123456789abcdef"
+
+// writeJSONString escapes s as a JSON string without allocating; it matches
+// encoding/json's output, including the HTML-safe escapes and U+2028/U+2029.
 func writeJSONString(b *bytes.Buffer, s string) {
-	out, _ := json.Marshal(s)
-	b.Write(out)
+	b.WriteByte('"')
+	start := 0
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			if c >= 0x20 && c != '"' && c != '\\' && c != '<' && c != '>' && c != '&' {
+				i++
+				continue
+			}
+			b.WriteString(s[start:i])
+			switch c {
+			case '"', '\\':
+				b.WriteByte('\\')
+				b.WriteByte(c)
+			case '\n':
+				b.WriteString(`\n`)
+			case '\r':
+				b.WriteString(`\r`)
+			case '\t':
+				b.WriteString(`\t`)
+			default:
+				b.WriteString(`\u00`)
+				b.WriteByte(hexDigits[c>>4])
+				b.WriteByte(hexDigits[c&0xF])
+			}
+			i++
+			start = i
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			b.WriteString(s[start:i])
+			b.WriteString("\ufffd") // the replacement character itself, as encoding/json writes it
+			i += size
+			start = i
+			continue
+		}
+		if r == '\u2028' || r == '\u2029' {
+			b.WriteString(s[start:i])
+			b.WriteString(`\u202`)
+			b.WriteByte(hexDigits[r&0xF])
+			i += size
+			start = i
+			continue
+		}
+		i += size
+	}
+	b.WriteString(s[start:])
+	b.WriteByte('"')
 }
 
 // writeJSONValue writes a value as JSON; anything json can't encode is written as a string.

@@ -138,7 +138,10 @@ func (l *Logger) logAttrs(level Level, t time.Time, msg string, call []slog.Attr
 		}
 	}()
 	attrs := l.attrs
-	if sc != nil || len(call) > 0 {
+	switch {
+	case sc == nil && len(l.attrs) == 0:
+		attrs = call // nothing to merge: the call's own slice will do
+	case sc != nil || len(call) > 0:
 		n := len(l.attrs) + len(call)
 		if sc != nil {
 			n += len(sc.attrs)

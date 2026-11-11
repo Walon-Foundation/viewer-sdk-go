@@ -179,3 +179,14 @@ func TestConsoleOffAndLevel(t *testing.T) {
 		t.Fatal("Enabled ignores the level")
 	}
 }
+
+func TestJSONStringMatchesEncodingJSON(t *testing.T) {
+	for _, s := range []string{"", "plain", `quote " and \ slash`, "line\nbreak\ttab\r", "\x00\x1f", "<a href='x'>&", "héllo wörld ✓", "bad \xff byte", "  ", "emoji 🚀"} {
+		var b bytes.Buffer
+		writeJSONString(&b, s)
+		want, _ := json.Marshal(s)
+		if b.String() != string(want) {
+			t.Errorf("%q: got %s, want %s", s, b.String(), want)
+		}
+	}
+}
