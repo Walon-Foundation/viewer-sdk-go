@@ -48,13 +48,20 @@ func (c *console) write(r *Record, fields []field) {
 
 func (c *console) writeText(r *Record, fields []field) {
 	b := &c.buf
-	b.WriteString(r.Time.Format("15:04:05.000"))
-	b.WriteByte(' ')
+	if !r.Time.IsZero() {
+		b.WriteString(r.Time.Format("15:04:05.000"))
+		b.WriteByte(' ')
+	}
 	lvl := strings.ToUpper(r.Level.String())
 	b.WriteString(lvl)
 	b.WriteString(strings.Repeat(" ", max(1, 6-len(lvl))))
 	b.WriteString(r.Message)
+	stack := ""
 	for _, f := range fields {
+		if f.Key == "exception.stacktrace" {
+			stack = f.Value.String() // printed under the line, where it reads as a stack
+			continue
+		}
 		b.WriteString("  ")
 		b.WriteString(f.Key)
 		b.WriteByte('=')
@@ -64,13 +71,24 @@ func (c *console) writeText(r *Record, fields []field) {
 		fmt.Fprintf(b, "  trace_id=%x", r.TraceID)
 	}
 	b.WriteByte('\n')
+	for _, line := range strings.Split(strings.TrimRight(stack, "\n"), "\n") {
+		if line != "" {
+			b.WriteString("    ")
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
+	}
 }
 
 func (c *console) writeJSON(r *Record, fields []field) {
 	b := &c.buf
-	b.WriteString(`{"time":`)
-	writeJSONString(b, r.Time.UTC().Format(time.RFC3339Nano))
-	b.WriteString(`,"level":`)
+	b.WriteByte('{')
+	if !r.Time.IsZero() {
+		b.WriteString(`"time":`)
+		writeJSONString(b, r.Time.UTC().Format(time.RFC3339Nano))
+		b.WriteByte(',')
+	}
+	b.WriteString(`"level":`)
 	writeJSONString(b, r.Level.String())
 	b.WriteString(`,"service":`)
 	writeJSONString(b, c.service)

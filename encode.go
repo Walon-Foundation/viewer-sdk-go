@@ -63,7 +63,11 @@ func (e *encoder) encode(b *bytes.Buffer, records []Record, observed time.Time) 
 
 func writeRecord(b *bytes.Buffer, r *Record, observed string) {
 	b.WriteString(`{"timeUnixNano":"`)
-	b.WriteString(strconv.FormatInt(r.Time.UnixNano(), 10))
+	if r.Time.IsZero() {
+		b.WriteString(observed) // an unknown time is sent as when it was observed
+	} else {
+		b.WriteString(strconv.FormatInt(r.Time.UnixNano(), 10))
+	}
 	b.WriteString(`","observedTimeUnixNano":"`)
 	b.WriteString(observed)
 	b.WriteString(`","severityNumber":`)
