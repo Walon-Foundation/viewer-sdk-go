@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 var fixed = time.Date(2026, 11, 11, 10, 58, 41, 207_000_000, time.UTC)
@@ -184,9 +185,16 @@ func TestJSONStringMatchesEncodingJSON(t *testing.T) {
 	for _, s := range []string{"", "plain", `quote " and \ slash`, "line\nbreak\ttab\r", "\x00\x1f", "<a href='x'>&", "héllo wörld ✓", "bad \xff byte", "  ", "emoji 🚀"} {
 		var b bytes.Buffer
 		writeJSONString(&b, s)
-		want, _ := json.Marshal(s)
-		if b.String() != string(want) {
-			t.Errorf("%q: got %s, want %s", s, b.String(), want)
+		// Compare what the JSON says, not its bytes: Go versions differ in how they write
+		// the replacement for invalid UTF-8 (escaped before Go 1.24, literal after).
+		var got, want string
+		ref, _ := json.Marshal(s)
+		if err := json.Unmarshal(b.Bytes(), &got); err != nil {
+			t.Fatalf("%q: not JSON: %s", s, b.String())
+		}
+		_ = json.Unmarshal(ref, &want)
+		if got != want || (utf8.ValidString(s) && b.String() != string(ref)) {
+			t.Errorf("%q: got %s, want %s", s, b.String(), ref)
 		}
 	}
 }
